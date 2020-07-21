@@ -34,6 +34,8 @@ class TPClient {
 	let lock: NSLock = NSLock()
 	var runningTasks = 0
 	var finishTasksCount = 0
+    let asyncqueue = DispatchQueue(label: "com.conpanyName.queue")
+
 	
 	func add(_ tasks: [TPTaskInfo]) {
 		TPStore.sharedStore.add(tasks);
@@ -75,8 +77,13 @@ class TPClient {
 				"Authorization": authorizationHeader,
 				"Accept": "application/json"
 			]
-			Alamofire.upload(imageData, to: BASE_URL, method: .post, headers: headers)
+            debugPrint("start-upload")
+                // do async task
+            asyncqueue.async {
+                Alamofire.upload(imageData, to: self.BASE_URL, method: .post, headers: headers)
 				.uploadProgress(closure: { (progress) in
+                    debugPrint("upload-processing %@",progress)
+
 					if progress.fractionCompleted == 1 {
 						self.updateStatus(task, newStatus: .processing)
 						debugPrint("processing: " + task.fileInfo.relativePath)
@@ -110,6 +117,7 @@ class TPClient {
 						self.markError(task, errorMessage: response.result.description)
 					}
 				})
+                }
 		} catch {
 			self.markError(task, errorMessage: "execute error")
 		}
@@ -131,9 +139,10 @@ class TPClient {
 		let destination: DownloadRequest.DownloadFileDestination = { _, _ in
 			return (task.outputFile!, [.createIntermediateDirectories, .removePreviousFile])
 		}
-		
 		Alamofire.download(task.resultUrl, to: destination)
 			.downloadProgress(closure: { (progress) in
+                debugPrint("download-processing %@",progress)
+
 				self.updateStatus(task, newStatus: .downloading, progress: progress)
 			})
 			.response { response in
@@ -161,6 +170,9 @@ class TPClient {
 	}
 	
 	fileprivate func updateStatus(_ task: TPTaskInfo, newStatus: TPTaskStatus, progress: Progress) {
+        DispatchQueue.main.async {
+           // update UI
+        
 		task.status = newStatus
 		task.progress = progress
 		if newStatus == .error || newStatus == .finish {
@@ -169,7 +181,8 @@ class TPClient {
 				self.finishTasksCount += 1
 			}
 		}
-		callback.taskStatusChanged(task: task)
+            self.callback.taskStatusChanged(task: task)
+            }
 	}
 	
 	fileprivate func updateStatus(_ task: TPTaskInfo, newStatus: TPTaskStatus) {
